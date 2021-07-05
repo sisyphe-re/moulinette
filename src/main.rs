@@ -1,9 +1,6 @@
 extern crate zstd;
 use chrono::format::ParseError;
-use chrono::{
-    offset::TimeZone, DateTime, FixedOffset, Local, NaiveDateTime,
-    Utc,
-};
+use chrono::{offset::TimeZone, DateTime, FixedOffset, Local, NaiveDateTime, Utc};
 use clap::{AppSettings, Clap};
 use rusqlite::{params, Connection, Result, Transaction};
 use std::fs::File;
@@ -29,7 +26,7 @@ enum MyError {
     E3(ParseError),
     E4(std::io::Error),
     E5(ParseFloatError),
-    E6(rusqlite::Error)
+    E6(rusqlite::Error),
 }
 
 impl From<ParseIntError> for MyError {
@@ -372,6 +369,52 @@ fn handle_server(
     }
 }
 
+fn handle_output(
+    transaction: &Transaction,
+    timestamp: &str,
+    node: &str,
+    stdout: &str,
+) -> Result<(), MyError> {
+    let mut stmt = transaction
+        .prepare_cached(
+            "INSERT INTO 'output'
+        (
+            'Timestamp',
+            'Node',
+            'Output Stdout'
+          ) VALUES (?, ?, ?)",
+        )
+        .unwrap();
+    let res = stmt.execute(params![timestamp, node, stdout]);
+    match res {
+        Ok(1) => Ok(()),
+        _ => Err(MyError::E2()),
+    }
+}
+
+fn handle_info(
+    transaction: &Transaction,
+    timestamp: &str,
+    node: &str,
+    message: &str,
+) -> Result<(), MyError> {
+    let mut stmt = transaction
+        .prepare_cached(
+            "INSERT INTO 'info'
+        (
+            'Timestamp',
+            'Node',
+            'Message'
+          ) VALUES (?, ?, ?)",
+        )
+        .unwrap();
+    let res = stmt.execute(params![timestamp, node, message]);
+    match res {
+        Ok(1) => Ok(()),
+        _ => Err(MyError::E2()),
+    }
+}
+
 fn dispatch(
     transaction: &Transaction,
     timestamp: &str,
@@ -395,7 +438,10 @@ fn dispatch(
         "rpl_status" => handle_rpl_status(transaction, &timestamp, node, &splitted),
         "stats" => handle_stats(transaction, &timestamp, node, &splitted),
         "udp" => handle_udp(transaction, &timestamp, node, &splitted),
-        _ => Ok(()),
+        _ => {
+            println!("Unknown tag: {}", tag);
+            Ok(())
+        }
     }
 }
 
@@ -593,7 +639,9 @@ fn handle_serial_data(connection: &mut Connection, filename: String) -> Result<(
                     &line_type[..],
                     node_headers.contains(&(node.to_string(), line_type.to_string())),
                 ) {
-                    ("info", true) => { /* We skip info data for the moment */ }
+                    ("info", true) => {
+                        handle_info(&t, &timestamp, &node, &data)?;
+                    }
                     (_, true) => {
                         /* It's data and it's not the first line: we add it to the database */
                         match dispatch(&t, &timestamp, &node, nested_splitted) {
@@ -607,9 +655,7 @@ fn handle_serial_data(connection: &mut Connection, filename: String) -> Result<(
                     ("info", false) => {
                         /* We manually add the header because we print it too early so the serial aggregator does not have time to read it */
                         node_headers.insert((node.to_string(), "info".to_string()));
-
-                        /* TODO: add it to the database */
-                        /* It's data: we add it to the database */
+                        handle_info(&t, &timestamp, &node, &data)?;
                     }
                     (line_type, false) => {
                         /* It's the first line: we add it as an header */
@@ -628,8 +674,7 @@ fn handle_serial_data(connection: &mut Connection, filename: String) -> Result<(
                     }
                 }
             } else {
-                /* Stdout */
-                /* TODO */
+                handle_output(&t, &timestamp, &node, &data)?;
             }
         }
         /* We commit the data to the database */
