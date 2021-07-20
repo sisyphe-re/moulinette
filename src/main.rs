@@ -570,7 +570,7 @@ fn handle_serial_data(connection: &mut Connection, filename: String) -> Result<(
     let mut headers: HashMap<String, Vec<String>> = HashMap::new();
 
     let f = File::open(filename)?;
-    let chunk_size = 2_000_000_000;
+    let chunk_size = 100_000_000;
     let mut decoder = zstd::stream::Decoder::new(f)?;
     let mut buffer = Vec::with_capacity(chunk_size);
     let mut leftover: String = String::new();
