@@ -423,12 +423,9 @@ fn dispatch(
 ) -> std::result::Result<(), MyError> {
     let tag = splitted[0];
     let epoch: f64 = timestamp.parse()?;
-    let timestamp =
-        NaiveDateTime::from_timestamp(epoch.trunc() as i64, (1e9 * epoch.fract()) as u32);
-    let tz_offset = FixedOffset::west(2 * 3600);
-    let timestamp: DateTime<FixedOffset> = tz_offset.from_local_datetime(&timestamp).unwrap();
-    let timestamp: DateTime<Utc> = Utc.from_utc_datetime(&timestamp.naive_utc());
-    let timestamp = timestamp.format("%Y-%m-%d %H:%M:%S%.f").to_string();
+    let timestamp = NaiveDateTime::from_timestamp(epoch.trunc() as i64, (1e9 * epoch.fract()) as u32);
+    let timestamp: DateTime<Utc> = DateTime::from_utc(timestamp, Utc);
+    let timestamp = timestamp.to_string();
     match tag {
         "neighbor_stats" => handle_neighbor_stats(transaction, &timestamp, node, &splitted),
         "rpl_stats" => handle_rpl_stats(transaction, &timestamp, node, &splitted),
@@ -750,20 +747,10 @@ fn handle_server_data(connection: &mut Connection, filename: String) -> Result<(
                 continue;
             }
             let splitted: Vec<&str> = line.split(",").collect();
-            let timestamp = NaiveDateTime::parse_from_str(splitted[0], "%Y-%m-%d %H:%M:%S%.f");
-            match timestamp {
-                Err(e) => {
-                    /* Problem parsing line ! */
-                    println!("Problem parsing line {}, skipping the data !", line);
-                    println!("Error: {}", e);
-                    continue;
-                }
-                _ => {}
-            }
-
-            let timestamp = timestamp.unwrap();
-            let timestamp: DateTime<Local> = Local.from_local_datetime(&timestamp).unwrap();
-            let timestamp = timestamp.format("%Y-%m-%d %H:%M:%S.%f").to_string();
+            let timestamp = splitted[0].replace(' ', "T");
+            let timestamp = DateTime::parse_from_rfc3339(&timestamp);
+            let timestamp: DateTime<Utc> = DateTime::from_utc(timestamp?.naive_utc(), Utc);
+            let timestamp = timestamp.to_string();
             let ipv6 = splitted[1];
             let port = splitted[2];
             let payload = splitted[3];
